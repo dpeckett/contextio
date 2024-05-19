@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCopyFullDuplex(t *testing.T) {
+func TestSpliceContext(t *testing.T) {
 	rwa := &deadlineReadWriter{
 		readBuf: []byte("hello world"),
 	}
@@ -29,7 +29,7 @@ func TestCopyFullDuplex(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	n, err := contextio.CopyFullDuplexContext(ctx, rwa, rwb)
+	n, err := contextio.SpliceContext(ctx, rwa, rwb)
 	require.NoError(t, err)
 
 	require.Equal(t, int64(22), n)

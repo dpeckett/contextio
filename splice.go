@@ -17,8 +17,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// CopyFullDuplexContext is a bidirectional copy operation with context cancellation support.
-func CopyFullDuplexContext(ctx context.Context, rwa DeadlineReadWriter, rwb DeadlineReadWriter) (written int64, err error) {
+// SpliceContext copies data between two ReadWriters until EOF is reached on one of them.
+func SpliceContext(ctx context.Context, rwa DeadlineReadWriter, rwb DeadlineReadWriter) (written int64, err error) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	var g errgroup.Group
