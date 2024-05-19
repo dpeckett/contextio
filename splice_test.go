@@ -12,6 +12,7 @@ package contextio_test
 import (
 	"context"
 	"io"
+	"os"
 	"testing"
 	"time"
 
@@ -20,22 +21,38 @@ import (
 )
 
 func TestSpliceContext(t *testing.T) {
-	rwa := &deadlineReadWriter{
-		readBuf: []byte("hello world"),
-	}
+	t.Run("Complete", func(t *testing.T) {
+		rwa := &deadlineReadWriter{
+			readBuf: []byte("hello world"),
+		}
 
-	rwb := &deadlineReadWriter{
-		readBuf: []byte("dlrow olleh"),
-	}
+		rwb := &deadlineReadWriter{
+			readBuf: []byte("dlrow olleh"),
+		}
 
-	ctx := context.Background()
-	n, err := contextio.SpliceContext(ctx, rwa, rwb)
-	require.NoError(t, err)
+		ctx := context.Background()
+		n, err := contextio.SpliceContext(ctx, rwa, rwb, nil)
+		require.NoError(t, err)
 
-	require.Equal(t, int64(22), n)
+		require.Equal(t, int64(22), n)
 
-	require.Equal(t, "dlrow olleh", string(rwa.writeBuf))
-	require.Equal(t, "hello world", string(rwb.writeBuf))
+		require.Equal(t, "dlrow olleh", string(rwa.writeBuf))
+		require.Equal(t, "hello world", string(rwb.writeBuf))
+	})
+
+	t.Run("Read Timeout", func(t *testing.T) {
+		rwa := &nopDeadlineReadWriter{}
+		rwb := &nopDeadlineReadWriter{}
+
+		readTimeout := 500 * time.Millisecond
+
+		ctx := context.Background()
+		n, err := contextio.SpliceContext(ctx, rwa, rwb, &readTimeout)
+
+		require.ErrorIs(t, err, os.ErrDeadlineExceeded)
+		require.Zero(t, n)
+	})
+
 }
 
 type deadlineReadWriter struct {
@@ -58,10 +75,23 @@ func (rw *deadlineReadWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func (rw *deadlineReadWriter) SetReadDeadline(t time.Time) error {
-	return nil
+func (rw *deadlineReadWriter) SetReadDeadline(t time.Time) error { return nil }
+
+func (rw *deadlineReadWriter) SetWriteDeadline(t time.Time) error { return nil }
+
+type nopDeadlineReadWriter struct {
 }
 
-func (rw *deadlineReadWriter) SetWriteDeadline(t time.Time) error {
-	return nil
+func (rw *nopDeadlineReadWriter) Read(p []byte) (n int, err error) {
+	time.Sleep(10 * time.Millisecond)
+	return 0, os.ErrDeadlineExceeded
 }
+
+func (rw *nopDeadlineReadWriter) Write(p []byte) (n int, err error) {
+	time.Sleep(10 * time.Millisecond)
+	return 0, os.ErrDeadlineExceeded
+}
+
+func (rw *nopDeadlineReadWriter) SetReadDeadline(t time.Time) error { return nil }
+
+func (rw *nopDeadlineReadWriter) SetWriteDeadline(t time.Time) error { return nil }

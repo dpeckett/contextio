@@ -17,9 +17,15 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// SpliceContext copies data between two ReadWriters until EOF is reached on one of them.
-func SpliceContext(ctx context.Context, rwa DeadlineReadWriter, rwb DeadlineReadWriter) (written int64, err error) {
+// SpliceContext copies data between two ReadWriters until EOF is reached on
+// one of them.
+// The optional `readTimeout` parameter can be used to set a timeout for
+// individual read operations, if not provided read operations will block
+// indefinitely (until the context is cancelled).
+func SpliceContext(ctx context.Context, rwa DeadlineReadWriter, rwb DeadlineReadWriter,
+	readTimeout *time.Duration) (written int64, err error) {
 	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	var g errgroup.Group
 
@@ -30,7 +36,7 @@ func SpliceContext(ctx context.Context, rwa DeadlineReadWriter, rwb DeadlineRead
 			cancel()
 		}()
 
-		n, err := CopyContext(ctx, rwa, rwb)
+		n, err := CopyContext(ctx, rwa, rwb, readTimeout)
 		written += n
 		return err
 	})
@@ -42,7 +48,7 @@ func SpliceContext(ctx context.Context, rwa DeadlineReadWriter, rwb DeadlineRead
 			cancel()
 		}()
 
-		n, err := CopyContext(ctx, rwb, rwa)
+		n, err := CopyContext(ctx, rwb, rwa, readTimeout)
 		written += n
 		return err
 	})

@@ -26,14 +26,41 @@ const (
 	pollInterval = 10 * time.Millisecond
 )
 
-// CopyContext is equivalent to `io.Copy` but with context cancellation support (for deadline reader/writers).
-func CopyContext(ctx context.Context, dst DeadlineWriter, src DeadlineReader) (written int64, err error) {
+// CopyContext is equivalent to `io.Copy` but with context cancellation support
+// (for deadline reader/writers).
+// The optional `readTimeout` parameter can be used to set a timeout for
+// individual read operations, if not provided read operations will block
+// indefinitely (until the context is cancelled).
+func CopyContext(ctx context.Context, dst DeadlineWriter, src DeadlineReader, readTimeout *time.Duration) (written int64, err error) {
 	data := make([]byte, bufferSize)
+
+	var readTimedOutCh <-chan time.Time
+	var cleanupReadTimer func()
+
+	resetReadTimer := func() {
+		if cleanupReadTimer != nil {
+			cleanupReadTimer()
+		}
+
+		if readTimeout != nil {
+			timer := time.NewTimer(*readTimeout)
+			readTimedOutCh = timer.C
+			cleanupReadTimer = func() { timer.Stop() }
+		} else {
+			forever := make(chan time.Time)
+			readTimedOutCh = forever
+			cleanupReadTimer = func() { close(forever) }
+		}
+	}
+
+	resetReadTimer()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return written, ctx.Err()
+		case <-readTimedOutCh:
+			return written, os.ErrDeadlineExceeded
 		default:
 		}
 
@@ -57,6 +84,8 @@ func CopyContext(ctx context.Context, dst DeadlineWriter, src DeadlineReader) (w
 
 			return written, readErr
 		}
+
+		resetReadTimer()
 
 		for offset := 0; offset < nr; {
 			select {

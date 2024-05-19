@@ -12,11 +12,11 @@ package contextio_test
 import (
 	"bytes"
 	"context"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/noisysockets/contextio"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,11 +34,11 @@ func TestCopyContext(t *testing.T) {
 		}()
 
 		var dst bytes.Buffer
-		n, err := contextio.CopyContext(ctx, contextio.NopDeadlineWriter(&dst), pr)
+		n, err := contextio.CopyContext(ctx, contextio.NopDeadlineWriter(&dst), pr, nil)
 		require.NoError(t, err)
 
-		assert.Equal(t, int64(11), n)
-		assert.Equal(t, "hello world", dst.String())
+		require.Equal(t, int64(11), n)
+		require.Equal(t, "hello world", dst.String())
 	})
 
 	t.Run("Cancelled", func(t *testing.T) {
@@ -58,9 +58,28 @@ func TestCopyContext(t *testing.T) {
 		}()
 
 		var dst bytes.Buffer
-		n, err := contextio.CopyContext(ctx, contextio.NopDeadlineWriter(&dst), pr)
+		n, err := contextio.CopyContext(ctx, contextio.NopDeadlineWriter(&dst), pr, nil)
 
-		assert.ErrorIs(t, err, context.Canceled)
-		assert.Zero(t, n)
+		require.ErrorIs(t, err, context.Canceled)
+		require.Zero(t, n)
+	})
+
+	t.Run("Read Timeout", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		pr, pw := contextio.Pipe()
+		t.Cleanup(func() {
+			_ = pr.Close()
+			_ = pw.Close()
+		})
+
+		readTimeout := 500 * time.Millisecond
+
+		var dst bytes.Buffer
+		n, err := contextio.CopyContext(ctx, contextio.NopDeadlineWriter(&dst), pr, &readTimeout)
+
+		require.ErrorIs(t, err, os.ErrDeadlineExceeded)
+		require.Zero(t, n)
 	})
 }
