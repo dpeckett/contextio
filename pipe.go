@@ -41,6 +41,7 @@ package contextio
 
 import (
 	stdio "io"
+	"math"
 	"os"
 	"sync"
 	"time"
@@ -61,30 +62,26 @@ type pipe struct {
 }
 
 func (p *pipe) read(b []byte) (n int, err error) {
-	var C <-chan time.Time
-
 	p.readDeadlineMu.Lock()
 	readDeadline := p.readDeadline
 	p.readDeadlineMu.Unlock()
 
+	var readTimeoutOrForever time.Duration = time.Duration(math.MaxInt64)
 	if readDeadline != nil {
 		defer func() {
 			p.readDeadlineMu.Lock()
 			p.readDeadline = nil
 			p.readDeadlineMu.Unlock()
 		}()
-		d := time.Until(*readDeadline)
-		if d <= 0 {
+
+		readTimeoutOrForever = time.Until(*readDeadline)
+		if readTimeoutOrForever <= 0 {
 			return 0, os.ErrDeadlineExceeded
 		}
-		timer := time.NewTimer(d)
-		C = timer.C
-		defer timer.Stop()
-	} else {
-		forever := make(chan time.Time)
-		defer close(forever)
-		C = forever
 	}
+
+	readTimer := time.NewTimer(readTimeoutOrForever)
+	defer readTimer.Stop()
 
 	select {
 	case <-p.done:
@@ -99,36 +96,32 @@ func (p *pipe) read(b []byte) (n int, err error) {
 		return nr, nil
 	case <-p.done:
 		return 0, ErrClosedPipe
-	case <-C:
+	case <-readTimer.C:
 		return 0, os.ErrDeadlineExceeded
 	}
 }
 
 func (p *pipe) write(b []byte) (n int, err error) {
-	var C <-chan time.Time
-
 	p.writeDeadlineMu.Lock()
 	writeDeadline := p.writeDeadline
 	p.writeDeadlineMu.Unlock()
 
+	var writeTimeoutOrForever time.Duration = time.Duration(math.MaxInt64)
 	if writeDeadline != nil {
 		defer func() {
 			p.writeDeadlineMu.Lock()
 			p.writeDeadline = nil
 			p.writeDeadlineMu.Unlock()
 		}()
-		d := time.Until(*writeDeadline)
-		if d <= 0 {
+
+		writeTimeoutOrForever = time.Until(*writeDeadline)
+		if writeTimeoutOrForever <= 0 {
 			return 0, os.ErrDeadlineExceeded
 		}
-		timer := time.NewTimer(d)
-		C = timer.C
-		defer timer.Stop()
-	} else {
-		forever := make(chan time.Time)
-		defer close(forever)
-		C = forever
 	}
+
+	writeTimer := time.NewTimer(writeTimeoutOrForever)
+	defer writeTimer.Stop()
 
 	select {
 	case <-p.done:
@@ -138,7 +131,7 @@ func (p *pipe) write(b []byte) (n int, err error) {
 		defer p.wrMu.Unlock()
 	}
 
-	for once := true; once || len(b) > 0; once = false {
+	for {
 		select {
 		case p.wrCh <- b:
 			nw := <-p.rdCh
@@ -146,8 +139,12 @@ func (p *pipe) write(b []byte) (n int, err error) {
 			n += nw
 		case <-p.done:
 			return n, ErrClosedPipe
-		case <-C:
+		case <-writeTimer.C:
 			return n, os.ErrDeadlineExceeded
+		}
+
+		if len(b) == 0 {
+			break
 		}
 	}
 	return n, nil

@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	stdio "io"
+	"math"
 	"net"
 	"os"
 	"strings"
@@ -34,32 +35,19 @@ const (
 func CopyContext(ctx context.Context, dst DeadlineWriter, src DeadlineReader, readTimeout *time.Duration) (written int64, err error) {
 	data := make([]byte, bufferSize)
 
-	var readTimedOutCh <-chan time.Time
-	var cleanupReadTimer func()
-
-	resetReadTimer := func() {
-		if cleanupReadTimer != nil {
-			cleanupReadTimer()
-		}
-
-		if readTimeout != nil {
-			timer := time.NewTimer(*readTimeout)
-			readTimedOutCh = timer.C
-			cleanupReadTimer = func() { timer.Stop() }
-		} else {
-			forever := make(chan time.Time)
-			readTimedOutCh = forever
-			cleanupReadTimer = func() { close(forever) }
-		}
+	var readTimeoutOrForever time.Duration = math.MaxInt64
+	if readTimeout != nil {
+		readTimeoutOrForever = *readTimeout
 	}
 
-	resetReadTimer()
+	readTimer := time.NewTimer(readTimeoutOrForever)
+	defer readTimer.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return written, ctx.Err()
-		case <-readTimedOutCh:
+		case <-readTimer.C:
 			return written, os.ErrDeadlineExceeded
 		default:
 		}
@@ -85,7 +73,7 @@ func CopyContext(ctx context.Context, dst DeadlineWriter, src DeadlineReader, re
 			return written, readErr
 		}
 
-		resetReadTimer()
+		readTimer.Reset(readTimeoutOrForever)
 
 		for offset := 0; offset < nr; {
 			select {
