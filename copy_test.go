@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noisysockets/contextio"
+	"github.com/dpeckett/contextio"
 	"github.com/stretchr/testify/require"
 )
 

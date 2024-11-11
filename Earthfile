@@ -1,5 +1,5 @@
 VERSION 0.7
-FROM golang:1.22-bookworm
+FROM golang:1.23-bookworm
 WORKDIR /workspace
 
 tidy:
@@ -8,7 +8,7 @@ tidy:
   RUN go fmt ./...
 
 lint:
-  FROM golangci/golangci-lint:v1.57.2
+  FROM golangci/golangci-lint:v1.62.0
   WORKDIR /workspace
   COPY . .
   RUN golangci-lint run --timeout 5m ./...
