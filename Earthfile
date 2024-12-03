@@ -1,5 +1,5 @@
 VERSION 0.7
-FROM golang:1.23-bookworm
+FROM golang:1.19-bookworm
 WORKDIR /workspace
 
 tidy:
